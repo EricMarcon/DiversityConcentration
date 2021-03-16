@@ -1,0 +1,211 @@
+---
+title: "Appendix"
+author: "Eric Marcon, Florence Puech"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document:
+    theme: sandstone
+    toc: yes
+    toc_float: yes
+---
+  
+```{r Options, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE, echo = TRUE, tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=80), out.width='\\maxwidth')
+options(width=80)
+# Install necessary packages
+CRANLibrary <- function(Packages) {
+  InstallAndLoad <- function(Package) {
+    if (!Package %in% installed.packages()[, 1]) {install.packages(Package, repos="https://cran.rstudio.com/")}
+    #require(Package, character.only = TRUE)
+  }
+  invisible(sapply(Packages, InstallAndLoad))
+}
+# Install Packages from GitHub
+GitHubLibrary <- function(Packages) {
+  InstallAndLoad <- function(Package) {
+    Package_split <- stringr::str_split(Package, "/", simplify = TRUE)
+    if (!Package_split[1, 2] %in% installed.packages()[, 1]) {remotes::install_github(Package)}
+    #require(Package_split[1, 2], character.only = TRUE)
+  }
+  invisible(sapply(Packages, InstallAndLoad))
+}
+# Necessary packages listed here
+CRANLibrary(c("entropart", "formatR", "kableExtra", "maptools", "rgdal", "rgeos", "tidyverse"))
+GitHubLibrary("EricMarcon/SpatDiv")
+```
+
+This document contains the code used to produce the figures of the paper and run all examples.
+It is part of an RStudio project with R Markdown documents.
+
+
+# Preparing data
+
+## Download data
+
+Data are available on https://opendata.paris.fr/explore/dataset/les-arbres/export/
+  
+The GeoJSON dataset that contains the trees is downloaded to `/data/les-arbres.les-arbres.geojson`.
+
+```{r}
+# Create the data folder if necessary
+if (!dir.exists("data")) dir.create("data")
+# Download the dataset if necessary (100)
+if (!file.exists("data/les-arbres.geojson"))
+  download.file("https://opendata.paris.fr/explore/dataset/les-arbres/download/?format=geojson", destfile="data/les-arbres.geojson")
+```
+
+Another dataset contains the limits of arrondissements, i.e. Paris administrative sectors.
+```{r}
+# Arrondissements
+if (!file.exists("data/arrondissements.geojson"))
+  download.file("https://opendata.arcgis.com/datasets/8463ae61c7ba4388bf08189effcbf2f1_0.geojson", destfile="data/arrondissements.geojson")
+```
+
+
+## Datum
+
+GeoJSON datasets are read by the **rgdal** package.
+
+```{r}
+library("rgdal")
+the_trees_GeoJSON <- readOGR("data/les-arbres.geojson", layer = "les-arbres", encoding = "UTF-8", use_iconv = TRUE)
+arrondissements <- readOGR("data/arrondissements.geojson", layer="COMMUNE_ARRONDISSEMENT_BOIS", encoding = "UTF-8", use_iconv = TRUE)
+```
+
+Data are projected into Lambert 93 coordinates.
+
+```{r, warning=FALSE}
+library("magrittr")
+the_trees_GeoJSON %<>% 
+  spTransform(CRS("+init=epsg:2154"))
+arrondissements %<>% 
+  spTransform(CRS("+init=epsg:2154"))
+```
+
+Latitude and longitude are now in meters.
+
+## The trees
+
+Useful data are gathered in a tibble to simplify further operations.
+Column names are translated into English. 
+So are green space types. 
+
+```{r, tidy=FALSE}
+library("tidyverse")
+the_trees_GeoJSON@data %>%
+  as_tibble() %>% 
+  # Bind Lambert coordinates
+  bind_cols(as.data.frame(the_trees_GeoJSON@coords)) %>% 
+  # Delete useless columns
+  select(-idemplacement, -typeemplacement, -geo_point_2d1, -geo_point_2d2, -complementadresse, -stadedeveloppement) %>% 
+  # Retain intra-muros Paris data only
+  dplyr::filter(str_detect(arrondissement, "^PARIS")) %>% 
+  # Add a full species name column
+  mutate(SpeciesName=as.factor(paste(genre, espece))) %>% 
+  # Factorize some columns
+  mutate(libellefrancais=as.factor(libellefrancais)) %>% 
+  mutate(genre=as.factor(genre)) %>% 
+  mutate(espece=as.factor(espece)) %>% 
+  mutate(remarquable=(remarquable=="OUI")) %>% 
+  # Translate green space types
+  mutate(domanialite=as.factor(domanialite)) %>% 
+  mutate(domanialite=fct_recode(domanialite, 
+           "Street" = "Alignement", 
+           "Park" = "Jardin", 
+           "Cemetery" = "CIMETIERE", 
+           "School" = "DASCO", 
+           "Ring Motorway" = "PERIPHERIQUE", 
+           "Sports facility" = "DJS", 
+           "Nursery" = "DFPE", 
+           "Cultural facility" = "DAC", 
+           "Social Services" = "DASES")) %>% 
+  # Arrondissement reduced to a number
+  mutate(arrondissement=str_replace(arrondissement, "PARIS ", "")) %>% 
+  mutate(arrondissement=str_replace(arrondissement, "E ARRDT", "")) %>% 
+  mutate(arrondissement=str_replace(arrondissement, "ER ARRDT", "")) %>%  
+  mutate(arrondissement=as.integer(arrondissement)) %>% 
+  # Simplify cemetery addresses to have a single one per cemetery
+  mutate(adresse=str_trim(ifelse(str_detect(as.character(adresse), "^CIMETIERE "), str_split(as.character(adresse), "/", simplify=TRUE)[, 1], as.character(adresse)))) %>% 
+  # Avoid duplicate addresses by adding arrondissement and domanialite data to them
+  mutate(adresse = as.factor(paste(adresse, arrondissement, domanialite))) %>% 
+  # Rename columns
+  rename(ID=idbase, 
+         FrenchSpeciesName=libellefrancais,
+         GreenSpaceType=domanialite,
+         Address=adresse,
+         Arrondissement=arrondissement,
+         Circumference=circonferenceencm,
+         Height=hauteurenm,
+         Remarkable=remarquable,
+         Genus=genre,
+         Species=espece,
+         x=coords.x1,
+         y=coords.x2,
+         VarietyOrCultivar=varieteoucultivar) ->
+  the_trees
+```
+
+## Arrondissements
+
+```{r}
+# Retain intra-muros Paris data only (postal code = 75xxx). Elmiminate outer forests ("Bois")
+arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & arrondissements@data$B_BOIS == "N" , ]
+arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & arrondissements@data$B_BOIS == "N" , ]
+# Reduce arrondissement name to its number
+arrondissements@data$L_CAB %<>% 
+  str_replace("er", "") %>% 
+  str_replace("e", "") %>% 
+  str_replace("ème", "") %>% 
+  as.integer()
+# Dissolve arrondissement borders to get a single polygon for Paris
+library("maptools")
+Paris <- unionSpatialPolygons(arrondissements, rep(TRUE, length(arrondissements@polygons)))
+```
+
+
+
+
+# Exploratory analyzes
+
+## Species abundances
+
+The total number of trees is `r nrow(the_trees)`.
+
+The most abundant species are
+
+```{r}
+the_trees %>% 
+  group_by(SpeciesName) %>% 
+  summarise(Number=n(), .groups='drop') %>% 
+  arrange(desc(Number)) %>% 
+  print ->
+  AbdFreqCount
+```
+
+
+
+# Spatial concentration
+
+## Weighted, Marked, Planar Point Pattern
+
+```{r}
+# Prepare the window
+library("dbmss")
+Paris_owin <- as.owin(Paris)
+# Make a wmppp object
+the_trees %>% 
+  select(x, y, SpeciesName) %>% 
+  rename(PointType=SpeciesName) %>% 
+  as.wmppp(window =Paris_owin) -> 
+  the_trees_wmppp
+autoplot(the_trees_wmppp, palette="Set1", LegendLabels = c("Circumference", "Species"), alpha = 0) +
+  geom_point(aes(x=x, y=y, size=0.1, stroke=0)) +
+  guides(color = FALSE, size = FALSE)
+```
+## Concentration
+
+```{r}
+M_Platanus <- Mhat(the_trees_wmppp, ReferenceType = "Platanus x hispanica")
+autoplot(M_Platanus)
+```
+
