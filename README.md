@@ -5,4 +5,4 @@
 
 Ongoing work.
 
-[Read](https://ericmarcon.github.io/DiversityConcentration/).
+[Read it](https://ericmarcon.github.io/DiversityConcentration/Appendix.html).
