@@ -10,13 +10,12 @@ output:
 ---
   
 ```{r Options, include=FALSE}
-knitr::opts_chunk$set(cache=TRUE, echo = TRUE, tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=80), out.width='\\maxwidth')
+knitr::opts_chunk$set(cache=TRUE, echo = TRUE, tidy=FALSE, tidy.opts=list(blank=FALSE, width.cutoff=80), out.width='\\maxwidth')
 options(width=80)
 # Install necessary packages
 CRANLibrary <- function(Packages) {
   InstallAndLoad <- function(Package) {
     if (!Package %in% installed.packages()[, 1]) {install.packages(Package, repos="https://cran.rstudio.com/")}
-    #require(Package, character.only = TRUE)
   }
   invisible(sapply(Packages, InstallAndLoad))
 }
@@ -25,7 +24,6 @@ GitHubLibrary <- function(Packages) {
   InstallAndLoad <- function(Package) {
     Package_split <- stringr::str_split(Package, "/", simplify = TRUE)
     if (!Package_split[1, 2] %in% installed.packages()[, 1]) {remotes::install_github(Package)}
-    #require(Package_split[1, 2], character.only = TRUE)
   }
   invisible(sapply(Packages, InstallAndLoad))
 }
@@ -51,14 +49,18 @@ The GeoJSON dataset that contains the trees is downloaded to `/data/les-arbres.l
 if (!dir.exists("data")) dir.create("data")
 # Download the dataset if necessary (100)
 if (!file.exists("data/les-arbres.geojson"))
-  download.file("https://opendata.paris.fr/explore/dataset/les-arbres/download/?format=geojson", destfile="data/les-arbres.geojson")
+  download.file(
+    "https://opendata.paris.fr/explore/dataset/les-arbres/download/?format=geojson", 
+    destfile="data/les-arbres.geojson")
 ```
 
 Another dataset contains the limits of arrondissements, i.e. Paris administrative sectors.
 ```{r}
 # Arrondissements
 if (!file.exists("data/arrondissements.geojson"))
-  download.file("https://opendata.arcgis.com/datasets/8463ae61c7ba4388bf08189effcbf2f1_0.geojson", destfile="data/arrondissements.geojson")
+  download.file(
+    "https://opendata.arcgis.com/datasets/8463ae61c7ba4388bf08189effcbf2f1_0.geojson",
+    destfile="data/arrondissements.geojson")
 ```
 
 
@@ -66,15 +68,19 @@ if (!file.exists("data/arrondissements.geojson"))
 
 GeoJSON datasets are read by the **rgdal** package.
 
-```{r}
+```{r, message=FALSE}
 library("rgdal")
-the_trees_GeoJSON <- readOGR("data/les-arbres.geojson", layer = "les-arbres", encoding = "UTF-8", use_iconv = TRUE)
-arrondissements <- readOGR("data/arrondissements.geojson", layer="COMMUNE_ARRONDISSEMENT_BOIS", encoding = "UTF-8", use_iconv = TRUE)
+the_trees_GeoJSON <- readOGR("data/les-arbres.geojson", 
+                             layer = "les-arbres", 
+                             encoding = "UTF-8", use_iconv = TRUE)
+arrondissements <- readOGR("data/arrondissements.geojson", 
+                           layer="COMMUNE_ARRONDISSEMENT_BOIS", 
+                           encoding = "UTF-8", use_iconv = TRUE)
 ```
 
 Data are projected into Lambert 93 coordinates.
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, message=FALSE}
 library("magrittr")
 the_trees_GeoJSON %<>% 
   spTransform(CRS("+init=epsg:2154"))
@@ -97,7 +103,8 @@ the_trees_GeoJSON@data %>%
   # Bind Lambert coordinates
   bind_cols(as.data.frame(the_trees_GeoJSON@coords)) %>% 
   # Delete useless columns
-  select(-idemplacement, -typeemplacement, -geo_point_2d1, -geo_point_2d2, -complementadresse, -stadedeveloppement) %>% 
+  select(-idemplacement, -typeemplacement, -geo_point_2d1, -geo_point_2d2, 
+         -complementadresse, -stadedeveloppement) %>% 
   # Retain intra-muros Paris data only
   dplyr::filter(str_detect(arrondissement, "^PARIS")) %>% 
   # Add a full species name column
@@ -125,7 +132,9 @@ the_trees_GeoJSON@data %>%
   mutate(arrondissement=str_replace(arrondissement, "ER ARRDT", "")) %>%  
   mutate(arrondissement=as.integer(arrondissement)) %>% 
   # Simplify cemetery addresses to have a single one per cemetery
-  mutate(adresse=str_trim(ifelse(str_detect(as.character(adresse), "^CIMETIERE "), str_split(as.character(adresse), "/", simplify=TRUE)[, 1], as.character(adresse)))) %>% 
+  mutate(adresse=str_trim(ifelse(str_detect(as.character(adresse), "^CIMETIERE "), 
+    str_split(as.character(adresse), "/", simplify=TRUE)[, 1], 
+    as.character(adresse)))) %>% 
   # Avoid duplicate addresses by adding arrondissement and domanialite data to them
   mutate(adresse = as.factor(paste(adresse, arrondissement, domanialite))) %>% 
   # Rename columns
@@ -141,7 +150,11 @@ the_trees_GeoJSON@data %>%
          Species=espece,
          x=coords.x1,
          y=coords.x2,
-         VarietyOrCultivar=varieteoucultivar) ->
+         VarietyOrCultivar=varieteoucultivar) %>% 
+  # Reorder them
+  select(ID, SpeciesName, FrenchSpeciesName, GreenSpaceType, Address, Arrondissement,
+         Circumference, Height, Remarkable, Genus, Species, x, y,
+         VarietyOrCultivar) ->
   the_trees
 ```
 
@@ -149,8 +162,10 @@ the_trees_GeoJSON@data %>%
 
 ```{r}
 # Retain intra-muros Paris data only (postal code = 75xxx). Elmiminate outer forests ("Bois")
-arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & arrondissements@data$B_BOIS == "N" , ]
-arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & arrondissements@data$B_BOIS == "N" , ]
+arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & 
+                                     arrondissements@data$B_BOIS == "N" , ]
+arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & 
+                                     arrondissements@data$B_BOIS == "N" , ]
 # Reduce arrondissement name to its number
 arrondissements@data$L_CAB %<>% 
   str_replace("er", "") %>% 
@@ -159,11 +174,9 @@ arrondissements@data$L_CAB %<>%
   as.integer()
 # Dissolve arrondissement borders to get a single polygon for Paris
 library("maptools")
-Paris <- unionSpatialPolygons(arrondissements, rep(TRUE, length(arrondissements@polygons)))
+Paris <- unionSpatialPolygons(arrondissements, 
+                              rep(TRUE, length(arrondissements@polygons)))
 ```
-
-
-
 
 # Exploratory analyzes
 
@@ -177,9 +190,7 @@ The most abundant species are
 the_trees %>% 
   group_by(SpeciesName) %>% 
   summarise(Number=n(), .groups='drop') %>% 
-  arrange(desc(Number)) %>% 
-  print ->
-  AbdFreqCount
+  arrange(desc(Number))
 ```
 
 
@@ -195,17 +206,93 @@ Paris_owin <- as.owin(Paris)
 # Make a wmppp object
 the_trees %>% 
   select(x, y, SpeciesName) %>% 
-  rename(PointType=SpeciesName) %>% 
-  as.wmppp(window =Paris_owin) -> 
+  rename(PointType = SpeciesName) %>% 
+  as.wmppp(window = Paris_owin) ->
   the_trees_wmppp
-autoplot(the_trees_wmppp, palette="Set1", LegendLabels = c("Circumference", "Species"), alpha = 0) +
-  geom_point(aes(x=x, y=y, size=0.1, stroke=0)) +
+autoplot(the_trees_wmppp, palette = "Set1", 
+         LegendLabels = c("Circumference", "Species"), alpha = 0) +
+  geom_point(aes(x = x, y = y), size = 0.1, stroke = 0) +
   guides(color = FALSE, size = FALSE)
 ```
+
 ## Concentration
+
+M function applied to the whole dataset.
 
 ```{r}
 M_Platanus <- Mhat(the_trees_wmppp, ReferenceType = "Platanus x hispanica")
 autoplot(M_Platanus)
+```
+
+
+# Diversity
+
+In entropart, data are organized in metacommunity object where each line is a species and each column a community (here, a street).
+
+```{r}
+library("entropart")
+the_trees %>% 
+  # Retain the streets
+  dplyr::filter(GreenSpaceType == "Street") %>% 
+  select(SpeciesName, Address, ID)  %>% 
+  pivot_wider(names_from = Address, 
+            values_from = ID,
+            values_fill = 0,
+            values_fn = length) %>% 
+  MetaCommunity(Weights = colSums(.[, -1])) %>% 
+  # Suppress warnings due to sample coverage estimation
+  suppressWarnings -> streets_MC
+```
+
+
+Diversity of the streets :
+```{r}
+DivPart(q = 1, streets_MC) -> streets_diversity
+streets_diversity$TotalAlphaDiversity
+streets_diversity$TotalBetaDiversity
+streets_diversity$GammaDiversity
+```
+
+
+# Spatially explicit diversity
+
+## Make a point pattern (wmppp) from its address
+
+```{r, tidy=FALSE, message=FALSE}
+#' wmppp from an address
+#'
+#' @param green_spaces A dataframe with address, x and y columns
+#' @param address An address to be found in `green_spaces$address`
+#' @param unitname A vector with the name of the unit of distance (singular, plural)
+#'
+#' @return A `wmppp` object
+wmppp_address <- function(green_spaces, address, unitname = c("meter", "meters")) {
+  # Prepare the dataframe
+  green_spaces %>%
+    dplyr::filter(Address == address) %>%
+    select(x, y,
+           PointType=SpeciesName,
+           PointWeight=Circumference) %>%
+    dbmss::wmppp(unitname = unitname)
+}
+```
+
+
+## Parc des Buttes Chaumont
+
+```{r}
+Buttes_Chaumont <- wmppp_address(the_trees, "PARC DES BUTTES CHAUMONT 19 Park")
+library("SpatDiv")
+Buttes_Chaumont$window <- alphahull(Buttes_Chaumont)
+autoplot(Buttes_Chaumont, labelSize = "Circumference", labelColor = "Species")
+```
+
+
+## Local diversity
+
+```{r}
+Buttes_Chaumont_accum <- Mixing(Buttes_Chaumont, q.seq=c(0,1), n.seq = c(5, 10),  Individual=TRUE)
+plot(Buttes_Chaumont_accum, q=1)
+MapPlot(Buttes_Chaumont_accum, Order=1, NeighborHood=11)
 ```
 
