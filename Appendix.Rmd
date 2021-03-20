@@ -94,9 +94,9 @@ Latitude and longitude are now in meters.
 
 Useful data are gathered in a tibble to simplify further operations.
 Column names are translated into English. 
-So are green space types. 
+So are green-space types. 
 
-```{r, tidy=FALSE}
+```{r, tidy=FALSE, message=FALSE}
 library("tidyverse")
 the_trees_GeoJSON@data %>%
   as_tibble() %>% 
@@ -184,13 +184,15 @@ Paris <- unionSpatialPolygons(arrondissements,
 
 The total number of trees is `r nrow(the_trees)`.
 
-The most abundant species are
+The most abundant species are:
 
 ```{r}
 the_trees %>% 
   group_by(SpeciesName) %>% 
   summarise(Number=n(), .groups='drop') %>% 
-  arrange(desc(Number))
+  arrange(desc(Number))%>% 
+  knitr::kable(caption="Domanialité", longtable = FALSE, booktabs = TRUE) %>%
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
 ```
 
 
@@ -209,8 +211,7 @@ the_trees %>%
   rename(PointType = SpeciesName) %>% 
   as.wmppp(window = Paris_owin) ->
   the_trees_wmppp
-autoplot(the_trees_wmppp, palette = "Set1", 
-         LegendLabels = c("Circumference", "Species"), alpha = 0) +
+autoplot(the_trees_wmppp, alpha = 0) +
   geom_point(aes(x = x, y = y), size = 0.1, stroke = 0) +
   guides(color = FALSE, size = FALSE)
 ```
@@ -270,7 +271,7 @@ wmppp_address <- function(green_spaces, address, unitname = c("meter", "meters")
   # Prepare the dataframe
   green_spaces %>%
     dplyr::filter(Address == address) %>%
-    select(x, y,
+    dplyr::select(x, y,
            PointType=SpeciesName,
            PointWeight=Circumference) %>%
     dbmss::wmppp(unitname = unitname)
