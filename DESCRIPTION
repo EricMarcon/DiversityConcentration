@@ -1,0 +1,25 @@
+Package: DiversityConcentration
+Title: Utilisation de Google Scholar et de Scopus avec R
+Version: 0.1
+Authors@R: c(
+  person("Eric", "Marcon", , "e.marcon@free.fr", c("aut", "cre"))
+  person("Florence", "Puech", , "florence.puech@universite-paris-saclay.fr", c("aut"))
+  )
+URL: https://github.com/EricMarcon/DiversityConcentration
+Depends:
+  R (>= 3.1.0)
+Imports:
+  dbmss,
+  entropart,
+  formatR,
+  kableExtra,
+  maptools,
+  rgdal,
+  rgeos,
+  SpatDiv,
+  tidyverse
+Remotes:
+  EricMarcon/dbmss,
+  EricMarcon/entropart,
+  EricMarcon/SpatDiv
+License: CC BY 4.0
