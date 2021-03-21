@@ -238,9 +238,9 @@ the_trees %>%
 ```{r}
 # Prepare the window
 library("maptools")
+library("dbmss")
 Paris_owin <- as.owin(Paris)
 # Make a wmppp object
-library("dbmss")
 the_trees %>% 
   select(x, y, SpeciesName) %>% 
   rename(PointType = SpeciesName) %>% 
