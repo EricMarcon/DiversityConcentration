@@ -269,7 +269,7 @@ autoplot(M_Platanus)
 In entropart, data are organized in metacommunity object where each line is a species and each column a community (here, a street).
 
 ```{r}
-library("dbplyr")
+library("tidyr")
 library("entropart")
 the_trees %>% 
   # Retain the streets
