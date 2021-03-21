@@ -208,6 +208,11 @@ if (!file.exists("data/ParisTrees.RData"))
 
 # Exploratory analyzes
 
+```{r}
+# Load the data
+load("data/ParisTrees.RData")
+```
+
 ## Species abundances
 
 The total number of trees is `r nrow(the_trees)`.
