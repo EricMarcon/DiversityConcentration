@@ -220,6 +220,7 @@ The total number of trees is `r nrow(the_trees)`.
 The most abundant species are:
 
 ```{r}
+library("dplyr")
 the_trees %>% 
   group_by(SpeciesName) %>% 
   summarise(Number=n(), .groups='drop') %>% 
