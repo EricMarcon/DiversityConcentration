@@ -41,6 +41,14 @@ It is part of an RStudio project with R Markdown documents.
 ## Download data
 
 Data are available on https://opendata.paris.fr/explore/dataset/les-arbres/export/
+
+Preparing data consists of downloading open-data files and wrangling it to obtain:
+
+- `the_trees`: a tibble with one line per tree, described mainly by its species, coordinates, and the green space it belongs to.
+- `Paris`: an `owin` object, i.e. a geometric window with the limits of the city.
+
+Those files are cached in the `data` folder.
+The wrangling process can be reinitialized by deleting it, e.g. to benefit from an update of the original data files.
   
 The GeoJSON dataset that contains the trees is downloaded to `/data/les-arbres.les-arbres.geojson`.
 
@@ -48,7 +56,7 @@ The GeoJSON dataset that contains the trees is downloaded to `/data/les-arbres.l
 # Create the data folder if necessary
 if (!dir.exists("data")) dir.create("data")
 # Download the dataset if necessary (100)
-if (!file.exists("data/les-arbres.geojson"))
+if (!file.exists("data/ParisTrees.RData"))
   download.file(
     "https://opendata.paris.fr/explore/dataset/les-arbres/download/?format=geojson", 
     destfile="data/les-arbres.geojson")
@@ -57,7 +65,7 @@ if (!file.exists("data/les-arbres.geojson"))
 Another dataset contains the limits of arrondissements, i.e. Paris administrative sectors.
 ```{r}
 # Arrondissements
-if (!file.exists("data/arrondissements.geojson"))
+if (!file.exists("data/ParisTrees.RData"))
   download.file(
     "https://opendata.arcgis.com/datasets/8463ae61c7ba4388bf08189effcbf2f1_0.geojson",
     destfile="data/arrondissements.geojson")
@@ -69,26 +77,31 @@ if (!file.exists("data/arrondissements.geojson"))
 GeoJSON datasets are read by the **rgdal** package.
 
 ```{r, message=FALSE}
-library("rgdal")
-the_trees_GeoJSON <- readOGR("data/les-arbres.geojson", 
+if (!file.exists("data/ParisTrees.RData")) {
+  library("rgdal")
+  the_trees_GeoJSON <- readOGR("data/les-arbres.geojson", 
                              layer = "les-arbres", 
                              encoding = "UTF-8", use_iconv = TRUE)
-arrondissements <- readOGR("data/arrondissements.geojson", 
+  arrondissements <- readOGR("data/arrondissements.geojson", 
                            layer="COMMUNE_ARRONDISSEMENT_BOIS", 
                            encoding = "UTF-8", use_iconv = TRUE)
+}
 ```
 
 Data are projected into Lambert 93 coordinates.
 
 ```{r, warning=FALSE, message=FALSE}
-library("magrittr")
-the_trees_GeoJSON %<>% 
-  spTransform(CRS("+init=epsg:2154"))
-arrondissements %<>% 
-  spTransform(CRS("+init=epsg:2154"))
+if (!file.exists("data/ParisTrees.RData")) {
+  library("magrittr")
+  the_trees_GeoJSON %<>% 
+    spTransform(CRS("+init=epsg:2154"))
+  arrondissements %<>% 
+    spTransform(CRS("+init=epsg:2154"))
+}
 ```
 
 Latitude and longitude are now in meters.
+
 
 ## The trees
 
@@ -97,88 +110,101 @@ Column names are translated into English.
 So are green-space types. 
 
 ```{r, tidy=FALSE, message=FALSE}
-library("dplyr")
-library("stringr")
-library("forcats")
-the_trees_GeoJSON@data %>%
-  as_tibble() %>% 
-  # Bind Lambert coordinates
-  bind_cols(as.data.frame(the_trees_GeoJSON@coords)) %>% 
-  # Delete useless columns
-  select(-idemplacement, -typeemplacement, -geo_point_2d1, -geo_point_2d2, 
-         -complementadresse, -stadedeveloppement) %>% 
-  # Retain intra-muros Paris data only
-  dplyr::filter(str_detect(arrondissement, "^PARIS")) %>% 
-  # Add a full species name column
-  mutate(SpeciesName=as.factor(paste(genre, espece))) %>% 
-  # Factorize some columns
-  mutate(libellefrancais=as.factor(libellefrancais)) %>% 
-  mutate(genre=as.factor(genre)) %>% 
-  mutate(espece=as.factor(espece)) %>% 
-  mutate(remarquable=(remarquable=="OUI")) %>% 
-  # Translate green space types
-  mutate(domanialite=as.factor(domanialite)) %>% 
-  mutate(domanialite=fct_recode(domanialite, 
-           "Street" = "Alignement", 
-           "Park" = "Jardin", 
-           "Cemetery" = "CIMETIERE", 
-           "School" = "DASCO", 
-           "Ring Motorway" = "PERIPHERIQUE", 
-           "Sports facility" = "DJS", 
-           "Nursery" = "DFPE", 
-           "Cultural facility" = "DAC", 
-           "Social Services" = "DASES")) %>% 
-  # Arrondissement reduced to a number
-  mutate(arrondissement=str_replace(arrondissement, "PARIS ", "")) %>% 
-  mutate(arrondissement=str_replace(arrondissement, "E ARRDT", "")) %>% 
-  mutate(arrondissement=str_replace(arrondissement, "ER ARRDT", "")) %>%  
-  mutate(arrondissement=as.integer(arrondissement)) %>% 
-  # Simplify cemetery addresses to have a single one per cemetery
-  mutate(adresse=str_trim(ifelse(str_detect(as.character(adresse), "^CIMETIERE "), 
-    str_split(as.character(adresse), "/", simplify=TRUE)[, 1], 
-    as.character(adresse)))) %>% 
-  # Avoid duplicate addresses by adding arrondissement and domanialite data to them
-  mutate(adresse = as.factor(paste(adresse, arrondissement, domanialite))) %>% 
-  # Rename columns
-  rename(ID=idbase, 
-         FrenchSpeciesName=libellefrancais,
-         GreenSpaceType=domanialite,
-         Address=adresse,
-         Arrondissement=arrondissement,
-         Circumference=circonferenceencm,
-         Height=hauteurenm,
-         Remarkable=remarquable,
-         Genus=genre,
-         Species=espece,
-         x=coords.x1,
-         y=coords.x2,
-         VarietyOrCultivar=varieteoucultivar) %>% 
-  # Reorder them
-  select(ID, SpeciesName, FrenchSpeciesName, GreenSpaceType, Address, Arrondissement,
-         Circumference, Height, Remarkable, Genus, Species, x, y,
-         VarietyOrCultivar) ->
-  the_trees
+if (!file.exists("data/ParisTrees.RData")) {
+  library("dplyr")
+  library("stringr")
+  library("forcats")
+  the_trees_GeoJSON@data %>%
+    as_tibble() %>% 
+    # Bind Lambert coordinates
+    bind_cols(as.data.frame(the_trees_GeoJSON@coords)) %>% 
+    # Delete useless columns
+    select(-idemplacement, -typeemplacement, -geo_point_2d1, -geo_point_2d2, 
+           -complementadresse, -stadedeveloppement) %>% 
+    # Retain intra-muros Paris data only
+    dplyr::filter(str_detect(arrondissement, "^PARIS")) %>% 
+    # Add a full species name column
+    mutate(SpeciesName=as.factor(paste(genre, espece))) %>% 
+    # Factorize some columns
+    mutate(libellefrancais=as.factor(libellefrancais)) %>% 
+    mutate(genre=as.factor(genre)) %>% 
+    mutate(espece=as.factor(espece)) %>% 
+    mutate(remarquable=(remarquable=="OUI")) %>% 
+    # Translate green space types
+    mutate(domanialite=as.factor(domanialite)) %>% 
+    mutate(domanialite=fct_recode(domanialite, 
+             "Street" = "Alignement", 
+             "Park" = "Jardin", 
+             "Cemetery" = "CIMETIERE", 
+             "School" = "DASCO", 
+             "Ring Motorway" = "PERIPHERIQUE", 
+             "Sports facility" = "DJS", 
+             "Nursery" = "DFPE", 
+             "Cultural facility" = "DAC", 
+             "Social Services" = "DASES")) %>% 
+    # Arrondissement reduced to a number
+    mutate(arrondissement=str_replace(arrondissement, "PARIS ", "")) %>% 
+    mutate(arrondissement=str_replace(arrondissement, "E ARRDT", "")) %>% 
+    mutate(arrondissement=str_replace(arrondissement, "ER ARRDT", "")) %>%  
+    mutate(arrondissement=as.integer(arrondissement)) %>% 
+    # Simplify cemetery addresses to have a single one per cemetery
+    mutate(adresse=str_trim(ifelse(str_detect(as.character(adresse), "^CIMETIERE "), 
+      str_split(as.character(adresse), "/", simplify=TRUE)[, 1], 
+      as.character(adresse)))) %>% 
+    # Avoid duplicate addresses by adding arrondissement and domanialite data to them
+    mutate(adresse = as.factor(paste(adresse, arrondissement, domanialite))) %>% 
+    # Rename columns
+    rename(ID=idbase, 
+           FrenchSpeciesName=libellefrancais,
+           GreenSpaceType=domanialite,
+           Address=adresse,
+           Arrondissement=arrondissement,
+           Circumference=circonferenceencm,
+           Height=hauteurenm,
+           Remarkable=remarquable,
+           Genus=genre,
+           Species=espece,
+           x=coords.x1,
+           y=coords.x2,
+           VarietyOrCultivar=varieteoucultivar) %>% 
+    # Reorder them
+    select(ID, SpeciesName, FrenchSpeciesName, GreenSpaceType, Address, Arrondissement,
+           Circumference, Height, Remarkable, Genus, Species, x, y,
+           VarietyOrCultivar) ->
+    the_trees
+}
 ```
+
 
 ## Arrondissements
 
 ```{r}
-# Retain intra-muros Paris data only (postal code = 75xxx). Elmiminate outer forests ("Bois")
-arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & 
-                                     arrondissements@data$B_BOIS == "N" , ]
-arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & 
-                                     arrondissements@data$B_BOIS == "N" , ]
-# Reduce arrondissement name to its number
-arrondissements@data$L_CAB %<>% 
-  str_replace("er", "") %>% 
-  str_replace("e", "") %>% 
-  str_replace("ème", "") %>% 
-  as.integer()
-# Dissolve arrondissement borders to get a single polygon for Paris
-library("maptools")
-Paris <- unionSpatialPolygons(arrondissements, 
-                              rep(TRUE, length(arrondissements@polygons)))
+if (!file.exists("data/ParisTrees.RData")) {
+  # Retain intra-muros Paris data only (postal code = 75xxx). Eliminate outer forests ("Bois")
+  arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & 
+                                       arrondissements@data$B_BOIS == "N" , ]
+  arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & 
+                                       arrondissements@data$B_BOIS == "N" , ]
+  # Reduce arrondissement name to its number
+  arrondissements@data$L_CAB %<>% 
+    str_replace("er", "") %>% 
+    str_replace("e", "") %>% 
+    str_replace("ème", "") %>% 
+    as.integer()
+  # Dissolve arrondissement borders to get a single polygon for Paris
+  library("maptools")
+  Paris <- unionSpatialPolygons(arrondissements, 
+                                rep(TRUE, length(arrondissements@polygons)))
+}
 ```
+
+## Save the data
+
+```{r}
+if (!file.exists("data/ParisTrees.RData"))
+  save(the_trees, Paris, file = "data/ParisTrees.RData")
+```
+
 
 # Exploratory analyzes
 

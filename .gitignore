@@ -18,7 +18,6 @@
 /*_cache/
 /libs/
 
-
 # Latex files
 *.aux
 *-blx.bib
@@ -33,7 +32,3 @@
 *-concordance.tex
 *(busy)
 *.tex
-
-# Data
-data/
-
